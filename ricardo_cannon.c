@@ -39,37 +39,47 @@ int main_cont(MPI_Comm comm, int argc, char * argv[], int root) {
 	int coords[2];
 	MPI_Cart_coords(comm, id, 2, coords);
 
-	FILE * fp = fopen(argv[1], "r");
+	FILE * fpa = fopen(argv[1], "r");
+	FILE * fpb = fopen(argv[2], "r");
 
 	int n;
 
 	if (!id) {
-		int m;
-		fread(&m, sizeof(int), 1, fp);
-		fread(&n, sizeof(int), 1, fp);
-		if (m != n) {
-			perror("ERROR: Input file must be NxN matrix");
+		int m, o, p;
+		fread(&m, sizeof(int), 1, fpa);
+		fread(&n, sizeof(int), 1, fpa);
+		fread(&o, sizeof(int), 1, fpb);
+		fread(&p, sizeof(int), 1, fpb);
+		if ((m != n)||(o != p)) {
+			perror("ERROR: Input files must be NxN matrices");
 			MPI_Abort(MPI_COMM_WORLD, 1);
 		}
+		if (m != o) {
+			perror("Error: Input files must be matrices with same dimensions");
+			MPI_Abort(MPI_COMM_WORLD, 2);
+		}
 	} else {
-		fseek(fp, sizeof(int)*2, SEEK_SET);
+		fseek(fpa, sizeof(int)*2, SEEK_SET);
+		fseek(fpb, sizeof(int)*2, SEEK_SET);
 	}
 
 	MPI_Bcast(&n, 1, MPI_INTEGER, 0, comm);
-
-	int sub_size = n/root;
-	sub_size *= sub_size;
-	double * buffer = (double*)malloc(sizeof(double)*sub_size);
 
 	int x_low = BLOCK_LOW(coords[0], root, n);
 	int x_high = BLOCK_HIGH(coords[0], root, n);
 	int y_low = BLOCK_LOW(coords[1], root, n);
 	int y_high = BLOCK_HIGH(coords[1], root, n);
 
-	for (int i = 0; i < sub_size; ++i) {
-	}
+	int area = (x_high-x_low)*(y_high-y_low);
+	double * mat_a = (double*)malloc(sizeof(double)*area);
+	doulbe * mat_b = (double*)malloc(sizeof(double)*area);
 
-	fseek(fp, (sizeof(int)), SEEK_SET);
+	// X = (i/(upper_bound-lower_bound))+lower_bound
+	// Y = (i%(upper_bound-lower_bound))+lower_bound 
+
+	int offset;
+	for (int i = 0; i < area; ++i) {
+	}
 
 }
 
