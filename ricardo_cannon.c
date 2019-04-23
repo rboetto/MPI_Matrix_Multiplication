@@ -65,22 +65,26 @@ int main_cont(MPI_Comm comm, int argc, char * argv[], int root) {
 
 	MPI_Bcast(&n, 1, MPI_INTEGER, 0, comm);
 
-	int x_low = BLOCK_LOW(coords[0], root, n);
-	int x_high = BLOCK_HIGH(coords[0], root, n);
-	int y_low = BLOCK_LOW(coords[1], root, n);
-	int y_high = BLOCK_HIGH(coords[1], root, n);
+	int horiz = BLOCK_SIZE(coords[0], root, n);
+	int vert = BLOCK_SIZE(coords[1], root, n);
 
-	int area = (x_high-x_low)*(y_high-y_low);
-	double * mat_a = (double*)malloc(sizeof(double)*area);
-	doulbe * mat_b = (double*)malloc(sizeof(double)*area);
+	double * mat_a = (double*)malloc(sizeof(double)*horiz*vert);
+	double * mat_b = (double*)malloc(sizeof(double)*horiz*vert);
 
 	// X = (i/(upper_bound-lower_bound+1))+lower_bound
 	// Y = (i%(upper_bound-lower_bound))+lower_bound 
 
-	int x_off, y_off;
-	for (int i = 0; i < area; ++i) {
-		x_off = (i/(x_high-x_low+1))+x_low;
-		y_off = (i%(x_high-x_low+1))+y_low; // ???
+	int x_off, y_off, i;
+	for (i = 0; i < area; ++i) {
+		x_off = (i/horiz)+BLOCK_LOW(coords[0],root,n);
+		y_off = (i%horiz)+BLOCK_LOW(coords[1],root,n);
+		*(mat_a+i) = x_off + y_off * n;
+	}
+
+	if (!id) {
+		for (i = 0; i < area; ++i) {
+			printf("%f ", *(mat_a+i)
+		}
 	}
 
 }
