@@ -74,11 +74,13 @@ int main_cont(MPI_Comm comm, int argc, char * argv[], int root) {
 	double * mat_a = (double*)malloc(sizeof(double)*area);
 	doulbe * mat_b = (double*)malloc(sizeof(double)*area);
 
-	// X = (i/(upper_bound-lower_bound))+lower_bound
+	// X = (i/(upper_bound-lower_bound+1))+lower_bound
 	// Y = (i%(upper_bound-lower_bound))+lower_bound 
 
-	int offset;
+	int x_off, y_off;
 	for (int i = 0; i < area; ++i) {
+		x_off = (i/(x_high-x_low+1))+x_low;
+		y_off = (i%(x_high-x_low+1))+y_low; // ???
 	}
 
 }
