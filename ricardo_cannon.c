@@ -67,25 +67,23 @@ int main_cont(MPI_Comm comm, int argc, char * argv[], int root) {
 
 	int horiz = BLOCK_SIZE(coords[0], root, n);
 	int vert = BLOCK_SIZE(coords[1], root, n);
+	int area = horiz*vert;
 
-	double * mat_a = (double*)malloc(sizeof(double)*horiz*vert);
-	double * mat_b = (double*)malloc(sizeof(double)*horiz*vert);
+	double * mat_a = (double*)malloc(sizeof(double)*area);
+	double * mat_b = (double*)malloc(sizeof(double)*area);
 
+	printf("Process %i,%i is handling %i doubles\n", coords[0], coords[1], area);
+	MPI_Barrier(comm);
+
+	int i, x, y;
+	for (i = 0; i < area; i++) {
+		x = (i/horiz)+BLOCK_LOW(coords[0],root,n);
+		y = (i%horiz)+BLOCK_LOW(coords[1],root,n);
+		printf("(%i,%i):(%i,%i)\n", coords[0], coords[1], x, y);
+
+	}
 	// X = (i/(upper_bound-lower_bound+1))+lower_bound
 	// Y = (i%(upper_bound-lower_bound))+lower_bound 
-
-	int x_off, y_off, i;
-	for (i = 0; i < area; ++i) {
-		x_off = (i/horiz)+BLOCK_LOW(coords[0],root,n);
-		y_off = (i%horiz)+BLOCK_LOW(coords[1],root,n);
-		*(mat_a+i) = x_off + y_off * n;
-	}
-
-	if (!id) {
-		for (i = 0; i < area; ++i) {
-			printf("%f ", *(mat_a+i)
-		}
-	}
 
 }
 
