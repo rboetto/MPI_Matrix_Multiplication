@@ -106,30 +106,14 @@ int main(int argc, char * argv[]) {
 	double * col_send = (double*)malloc(sizeof(double)*vert);
 	double * col_recv = (double*)malloc(sizeof(double)*vert);
 
-	int coord_abv[2] = { coords[0], coords[1]+1 };
-	if (coord_abv[1] >= root) coord_abv[1] -= root;
-	int p_abv;
-	MPI_Cart_rank(cart_comm, coord_abv, &p_abv);
+	int p_blw, p_abv, p_lft, p_rgt;
+	MPI_Cart_shift(cart_comm, 0, 1, &p_lft, &p_rgt);
+	MPI_Cart_shift(cart_comm, 1, 1, &p_blw, &p_abv);
 
-	int coord_blw[2] = { coords[0], coords[1]-1 };
-	if (coord_blw[1] < 0) coord_blw[1] += root;
-	int p_blw;
-	MPI_Cart_rank(cart_comm, coord_blw, &p_blw);
-
-	int coord_lft[2] = {coords[0]-1, coords[1]};
-	if (coord_lft[0] < 0) coord_lft[0] += root;
-	int p_lft;
-	MPI_Cart_rank(cart_comm, coord_lft, &p_lft);
-
-	int coord_rgt[2] = {coords[0]+1, coords[1]};
-	if (coord_rgt[0] >= root) coord_rgt[0] -= root;
-	int p_rgt;
-	MPI_Cart_rank(cart_comm, coord_rgt, &p_rgt);
-
-	MPI_Barrier(sub_comm);
 	MPI_Status not_used;
 
-	printf("%i:(%i,%i) is above %i:(%i,%i)\n", id, coords[0], coords[1], p_blw, coord_blw[0], coord_blw[1]);
+	MPI_Barrier(sub_comm);
+	printf("%i --> %i(%i/%i/%i) --> %i\n", p_blw, id, horiz, vert, area, p_abv);
 	MPI_Barrier(sub_comm);
 
 	double a, b;
@@ -141,7 +125,6 @@ int main(int argc, char * argv[]) {
 		for (i = 0; i <= horiz; i++) *(row_send+i) = *(mat_a+(a_top*n)+i);
 		for (i = 0; i < vert; i++) *(col_send+i) = *(mat_b+(i*n)+b_left);
 
-
 		if (!coords[1]) {
 			MPI_Send(row_send, horiz, MPI_DOUBLE, p_abv, 0, sub_comm);
 			MPI_Recv(row_recv, horiz, MPI_DOUBLE, p_blw, 0, sub_comm, &not_used);
@@ -152,13 +135,15 @@ int main(int argc, char * argv[]) {
 		}
 
 		if (!coords[0]) {
-			MPI_Send(col_send, vert, MPI_DOUBLE, p_lft, 0, sub_comm);
-			MPI_Recv(col_recv, vert, MPI_DOUBLE, p_rgt, 0, sub_comm, &not_used);
+			MPI_Send(col_send, vert, MPI_DOUBLE, p_rgt, 0, sub_comm);
+			MPI_Recv(col_recv, vert, MPI_DOUBLE, p_lft, 0, sub_comm, &not_used);
 		} else {
 			MPI_Recv(col_recv, vert, MPI_DOUBLE, p_rgt, 0, sub_comm, &not_used);
 			MPI_Send(col_send, vert, MPI_DOUBLE, p_lft, 0, sub_comm);
 		}
 
+		printf("flag");
+		MPI_Barrier(cart_comm);
 
 		shift_up(mat_a, n, horiz, vert, row_recv);
 		shift_left(mat_b, n, horiz, vert, col_recv);
@@ -202,7 +187,7 @@ void shift_left (double * mat, int n, int horiz, int vert, double * new_col) {
 	int i, j;
 	for (i = 0; i < vert; i++) {
 		for (j = 0; j < horiz - 1; j++) {
-			*(mat + i*n + j) = *(mat + i*n + j+1); 
+			*(mat + i*n + j) = *(mat + i*n + j+1);
 		}
 	}
 
