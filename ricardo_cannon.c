@@ -4,7 +4,7 @@ int fast_square_root(int n);
 void shift_up (double * mat, int n, int horiz, int vert, double * new_row);
 void shift_left (double * mat, int n, int horiz, int vert, double * new_col);
 
-int main(int argc, char * argv[]) {
+int main(int argc, char *argv[]) {
 
 	MPI_Init(&argc, &argv);
 
@@ -13,12 +13,13 @@ int main(int argc, char * argv[]) {
 	MPI_Comm_size(MPI_COMM_WORLD, &p);
 
 	// Decompose communicator into greatest square < p
-	int root = fast_square_root(p);
-	int g_sqr = root * root;
+	int root_p = fast_square_root(p);
+	int g_sqr = root_p * root_p;
 
 	FILE * fpa = fopen(argv[1], "r");
 	FILE * fpb = fopen(argv[2], "r");
 
+	// Validate matrices, get size of N
 	int n;
 	if (!id) {
 		int m, o, p;
@@ -28,11 +29,11 @@ int main(int argc, char * argv[]) {
 		fread(&p, sizeof(int), 1, fpb);
 
 		if ((m != n)||(o != p)) {
-			perror("ERROR: Files must be N by N matrices");
+			perror("ERROR: Files must contain NxN matrices\n");
 			MPI_Abort(MPI_COMM_WORLD, 1);
 		}
 		if (m != o) {
-			perror("ERROR: Files must have same dimensions");
+			perror("ERROR: Matrices must have same dimensions\n");
 			MPI_Abort(MPI_COMM_WORLD, 2);
 		}
 	} else {
@@ -47,7 +48,14 @@ int main(int argc, char * argv[]) {
 
 	// Clamp # of processes to number of elements in matrices
 	g_sqr = MIN(g_sqr,n*n);
-	root = MIN(root,n);
+	root_p = MIN(root_p,n);
+
+	int sub_size = n*n/g_sqr;
+	int z = fast_square_root(sub_size);
+	if (z*z != sub_size) {
+		perror("ERROR: Submatrix dimensions must be square numbers. View README for instructions.\n");
+		MPI_Abort(MPI_COMM_WORLD, 3);
+	}
 
 	// Create mew communicator with usable processes
 	MPI_Comm cart_comm, sub_comm;
@@ -55,36 +63,42 @@ int main(int argc, char * argv[]) {
 
 	// Only processes within n / greatest square within num proc. do anything
 	if (id < g_sqr) {
-		int periods[2] = {root,root};
+		int periods[2] = {root_p,root_p};
 		MPI_Cart_create(sub_comm, 2, periods, periods, 0, &cart_comm);
 	} else {
 		MPI_Finalize();
 		return 0;
 	}
 
+	// Determine Cartesian ID for process
 	int coords[2];
 	MPI_Cart_coords(cart_comm, id, 2, coords);
-
-	int horiz = BLOCK_SIZE(coords[0], root, n);
-	int vert = BLOCK_SIZE(coords[1], root, n);
-	int area = horiz*vert;
-
-	double * mat_a = (double*)malloc(sizeof(double)*area);
-	double * mat_b = (double*)malloc(sizeof(double)*area);
-
-	int x_low = BLOCK_LOW(coords[0],root,n);
-	int x_high = BLOCK_HIGH(coords[0],root,n);
-	int y_low = BLOCK_LOW(coords[1],root,n);
-	int y_high = BLOCK_HIGH(coords[1],root,n);
+	int source, destination;
+	MPI_Cart_shift(cart_comm, 1, root_p-1, &source, &destination);
 
 
-	// The initial skewing of operand matrices is built into the reading of the file
-	// To remove communication overhead
+	int horiz = BLOCK_SIZE(coords[0], root_p, n);
+	int vert = BLOCK_SIZE(coords[1], root_p, n);
+	// For communication reasons, each submatrix must be NxN as well
+
+	double mat_a[z][z];
+	double mat_b[z][z];
+	double mat_c[z][z];
+
+	int x_low = BLOCK_LOW(coords[0],root_p,n);
+	int x_high = BLOCK_HIGH(coords[0],root_p,n);
+	int y_low = BLOCK_LOW(coords[1],root_p,n);
+	int y_high = BLOCK_HIGH(coords[1],root_p,n);
+
+
+	// Read files
+	// Note: Can be optimized by reading contiguous memory blocks as a single fread.
 	int i, j, offset;
 	int k = 0;
 	for (i = x_low; i <= x_high; i++) {
 		for (j = y_low; j <= y_high; j++) {
-			offset = i*n+((j+i)%n);
+			offset = i+((n-j-1)*n);
+			printf("Process %d will read the %dth (%d,%d) element\n", id, offset, i, n-j-1);
 			fsetpos(fpa, &top_a);
 			fseek(fpa, sizeof(double)*offset,SEEK_CUR);
 			fread((mat_a+k), sizeof(double), 1, fpa);
@@ -96,16 +110,19 @@ int main(int argc, char * argv[]) {
 		}
 	}
 
-	double * mat_c = (double*)malloc(sizeof(double)*area);
-	for (i = 0; i < area; i++) *(mat_c+i) = 0;
+	MPI_Barrier(sub_comm);
 
-	int a_top = 0;
-	int b_left = 0;
-	double * row_send = (double*)malloc(sizeof(double)*horiz);
-	double * row_recv = (double*)malloc(sizeof(double)*horiz);
-	double * col_send = (double*)malloc(sizeof(double)*vert);
-	double * col_recv = (double*)malloc(sizeof(double)*vert);
+	// Communication metadata
+	int src, dst;
+	MPI_Cart_shift(cart_comm, 0, -1, &src, &dst);
 
+	// Initial skew of matrix A
+	for (i = 0; i < vert; i++) {
+		for (j = i; j > 0; j--) {
+
+		}
+	}
+	/*
 	int p_blw, p_abv, p_lft, p_rgt;
 	MPI_Cart_shift(cart_comm, 0, 1, &p_lft, &p_rgt);
 	MPI_Cart_shift(cart_comm, 1, 1, &p_blw, &p_abv);
@@ -150,7 +167,7 @@ int main(int argc, char * argv[]) {
 
 
 	}
-
+	*/
 	// write_checkerboard_matrix(argv[3], (void**)&mat_c, MPI_DOUBLE, n, n, cart_comm);
 
 

@@ -1,6 +1,8 @@
 #ifndef RICARDO_CANNON
 #define RICARDO_CANNON
 #include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
 #include <mpi.h>
 
 #ifndef BLOCK_LOW
