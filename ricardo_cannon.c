@@ -3,6 +3,7 @@
 int fast_square_root(int n);
 void shift_up (double * mat, int n, int horiz, int vert, double * new_row);
 void shift_left (double * mat, int n, int horiz, int vert, double * new_col);
+void shiftRow (double send[], int n, int amt, MPI_Comm comm);
 
 int main(int argc, char *argv[]) {
 
@@ -112,14 +113,15 @@ int main(int argc, char *argv[]) {
 
 	MPI_Barrier(sub_comm);
 
-	// Communication metadata
-	int src, dst;
-	MPI_Cart_shift(cart_comm, 0, -1, &src, &dst);
-
 	// Initial skew of matrix A
-	for (i = 0; i < vert; i++) {
-		for (j = i; j > 0; j--) {
-
+	double buff[z];
+	for (i = 0; i < z; i++) {
+		for (j = 0; j < z; j++) {
+			buff[j] = mat_a[j][i];
+		}
+		shiftRow(buff, z, i, cart_comm);
+		for (j = 0; j < z; j++) {
+		printf("%d: %f --> %f\n", id, mat_a[j][i], buff[j]);
 		}
 	}
 	/*
@@ -199,19 +201,48 @@ void shift_up (double * mat, int n, int horiz, int vert, double * new_row) {
 
 }
 
-void shift_left (double * mat, int n, int horiz, int vert, double * new_col) {
+void shiftRow (double send[], int n, int amt, MPI_Comm comm) {
 
-	int i, j;
-	for (i = 0; i < vert; i++) {
-		for (j = 0; j < horiz - 1; j++) {
-			*(mat + i*n + j) = *(mat + i*n + j+1);
-		}
+int src, dst;
+double recv[n];
+
+// Assume a perfect displacement
+int disp = (amt/n)+(amt%n!=0);
+MPI_Cart_shift(comm, 0, -disp, &src, &dst);
+int id;
+MPI_Comm_rank(comm, &id);
+// printf("%d: Receives from %d and sends to %d\n", id, src, dst);
+
+
+MPI_Status status;
+
+// Something is wrong with my usage of send/recv
+MPI_Sendrecv(send, n, MPI_DOUBLE, dst, 0,
+	recv, n, MPI_DOUBLE, src, 0, comm, &status);
+
+int k;
+for (k = 0; k < n; k++) {
+	printf("%d: %f -> %f\n", id, send[k], recv[k]);
+}
+
+// If displacement fits evenly, wrap up
+// Else, correct
+if (amt%n==0) {
+	int i;
+	for (i = 0; i < n; i++) {
+		send[i]=recv[i];
 	}
-
-	for (i = 0; i < vert; i++) {
-		*(mat + i*n + horiz - 1) = *(new_col+i);
+} else {
+	int d = amt%n;
+	double send_p[d], recv_p[d];
+	int i;
+	for (i = 0; i < d; i++) send_p[i]=recv[d+i];
+	MPI_Cart_shift(comm, 0, 1, &src, &dst);
+	MPI_Sendrecv(send_p, d, MPI_DOUBLE, dst, 0, recv_p, d, MPI_DOUBLE, src, 0, comm, &status);
+	for (i = 0; i < n; i++) {
+		send[i]= i<d? recv_p[i] : recv[i-d];
 	}
-
+}
 
 }
 
