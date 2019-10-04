@@ -1,70 +1,63 @@
 #include "ricardo_cannon.h"
 
-int fast_square_root(int n);
+int fast_square_root (int n);
 void shift_up (double * mat, int n, int horiz, int vert, double * new_row);
 void shift_left (double * mat, int n, int horiz, int vert, double * new_col);
 void shiftRow (double send[], int n, int amt, MPI_Comm comm);
 
 int main(int argc, char *argv[]) {
 
-	MPI_Init(&argc, &argv);
+	MPI_Init (&argc, &argv);
 
 	int id, p;
-	MPI_Comm_rank(MPI_COMM_WORLD, &id);
-	MPI_Comm_size(MPI_COMM_WORLD, &p);
+	MPI_Comm_rank (MPI_COMM_WORLD, &id);
+	MPI_Comm_size (MPI_COMM_WORLD, &p);
 
-	// Decompose communicator into greatest square < p
-	int root_p = fast_square_root(p);
-	int g_sqr = root_p * root_p;
+	FILE * fpa = fopen (argv[1], "r");
+	FILE * fpb = fopen (argv[2], "r");
 
-	FILE * fpa = fopen(argv[1], "r");
-	FILE * fpb = fopen(argv[2], "r");
+	if (!id) printf("id=%d p=%d\n", id, p);
 
 	// Validate matrices, get size of N
 	int n;
 	if (!id) {
-		int m, o, p;
+		int m, o, v;
 		fread(&n, sizeof(int), 1, fpa);
 		fread(&m, sizeof(int), 1, fpa);
 		fread(&o, sizeof(int), 1, fpb);
-		fread(&p, sizeof(int), 1, fpb);
+		fread(&v, sizeof(int), 1, fpb);
 
-		if ((m != n)||(o != p)) {
-			perror("ERROR: Files must contain NxN matrices\n");
-			MPI_Abort(MPI_COMM_WORLD, 1);
+		if ((m != n)||(o != v)) {
+			perror ("ERROR: Files must contain NxN matrices\n");
+			MPI_Abort (MPI_COMM_WORLD, 1);
 		}
 		if (m != o) {
 			perror("ERROR: Matrices must have same dimensions\n");
 			MPI_Abort(MPI_COMM_WORLD, 2);
 		}
+		if (p < n*n) {
+			printf("%d %d\n", n*n, p);
+			perror("ERROR: # of elements > # of processes\n");
+			MPI_Abort(MPI_COMM_WORLD, 3);
+		}
 	} else {
-		fseek(fpa, sizeof(int)*2, SEEK_SET);
+		fread(&n, sizeof(int), 1, fpa);
+		fseek(fpa, sizeof(int), SEEK_SET);
 		fseek(fpb, sizeof(int)*2, SEEK_SET);
 	}
 
-	MPI_Bcast(&n, 1, MPI_INTEGER, 0, MPI_COMM_WORLD);
+	// Get position of matrix beginning
 	fpos_t top_a, top_b;
-	fgetpos(fpa, &top_a);
-	fgetpos(fpb, &top_b);
+	fgetpos (fpa, &top_a);
+	fgetpos (fpb, &top_b);
 
-	// Clamp # of processes to number of elements in matrices
-	g_sqr = MIN(g_sqr,n*n);
-	root_p = MIN(root_p,n);
-
-	int sub_size = n*n/g_sqr;
-	int z = fast_square_root(sub_size);
-	if (z*z != sub_size) {
-		perror("ERROR: Submatrix dimensions must be square numbers. View README for instructions.\n");
-		MPI_Abort(MPI_COMM_WORLD, 3);
-	}
-
-	// Create mew communicator with usable processes
+	// Create separate communicator with only number of needed processes
 	MPI_Comm cart_comm, sub_comm;
-	MPI_Comm_split(MPI_COMM_WORLD, id < g_sqr, id, &sub_comm);
+	MPI_Comm_split(MPI_COMM_WORLD, id < n*n, id, &sub_comm);
 
-	// Only processes within n / greatest square within num proc. do anything
-	if (id < g_sqr) {
-		int periods[2] = {root_p,root_p};
+	// Create cartesian communicator for active processes, finalize other processes
+	if (id < n*n) {
+		int periods[2] = {n,n};
 		MPI_Cart_create(sub_comm, 2, periods, periods, 0, &cart_comm);
 	} else {
 		MPI_Finalize();
@@ -74,26 +67,57 @@ int main(int argc, char *argv[]) {
 	// Determine Cartesian ID for process
 	int coords[2];
 	MPI_Cart_coords(cart_comm, id, 2, coords);
-	int source, destination;
-	MPI_Cart_shift(cart_comm, 1, root_p-1, &source, &destination);
 
+	// Calc. math coordinates from process coordinates
+	int x = n-coords[1]-1;
+	int y = coords[0];
 
-	int horiz = BLOCK_SIZE(coords[0], root_p, n);
-	int vert = BLOCK_SIZE(coords[1], root_p, n);
-	// For communication reasons, each submatrix must be NxN as well
+	// Get init. numbers
+	// Matrix alignment integrated
+	double a, b, c;
+	int offset = x*n+(y+x)%n;
+	fseek(fpa, sizeof(double)*offset, SEEK_CUR);
+	fread(&a, sizeof(double), 1, fpa);
+	offset = ((x+y)%n)*n+y;
+	fseek(fpb, sizeof(double)*offset, SEEK_CUR);
+	fread(&b, sizeof(double), 1, fpb);
+	c = 0;
 
-	double mat_a[z][z];
-	double mat_b[z][z];
-	double mat_c[z][z];
+	// Determine adjacent processes
+	int lft, rgt, top, btm;
+	MPI_Cart_shift(cart_comm, 0, -1, &rgt, &lft);
+	MPI_Cart_shift(cart_comm, 1, 1, &btm, &top);
 
-	int x_low = BLOCK_LOW(coords[0],root_p,n);
-	int x_high = BLOCK_HIGH(coords[0],root_p,n);
-	int y_low = BLOCK_LOW(coords[1],root_p,n);
-	int y_high = BLOCK_HIGH(coords[1],root_p,n);
+	// Execute cannon's algorithm
+	// Receive a from right, send to left
+	// Receive b from bottom, send to top
+	double a2, b2;
+	MPI_Status status;
 
+	int i;
+	for (i = 0; i < n - 1; i++) {
+		c += a*b;
+		if (!coords[0]) {
+			MPI_Send(&a, 1, MPI_DOUBLE, lft, 0, cart_comm);
+			MPI_Recv(&a2, 1, MPI_DOUBLE, rgt, 0, cart_comm, &status);
+		} else {
+			MPI_Recv(&a2, 1, MPI_DOUBLE, rgt, 0, cart_comm, &status);
+			MPI_Send(&a, 1, MPI_DOUBLE, lft, 0, cart_comm);
+		}
+		if (!coords[1]) {
+			MPI_Send(&b, 1, MPI_DOUBLE, top, 0, cart_comm);
+			MPI_Recv(&b2, 1, MPI_DOUBLE, btm, 0, cart_comm, &status);
+		} else {
+			MPI_Recv(&b2, 1, MPI_DOUBLE, btm, 0, cart_comm, &status);
+			MPI_Send(&b, 1, MPI_DOUBLE, top, 0, cart_comm);
+		}
+		a = a2;
+		b = b2;
+	}
 
-	// Read files
-	// Note: Can be optimized by reading contiguous memory blocks as a single fread.
+	printf("Result for cell (%d,%d) = %f", x, y, c);
+
+	/*
 	int i, j, offset;
 	int k = 0;
 	for (i = x_low; i <= x_high; i++) {
