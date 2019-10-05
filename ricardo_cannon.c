@@ -42,18 +42,19 @@ int main(int argc, char *argv[]) {
 		}
 	} else {
 		fread(&n, sizeof(int), 1, fpa);
-		fseek(fpa, sizeof(int), SEEK_SET);
+		fseek(fpa, sizeof(int)*2, SEEK_SET);
 		fseek(fpb, sizeof(int)*2, SEEK_SET);
 	}
 
-	// Get position of matrix beginning
-	fpos_t top_a, top_b;
-	fgetpos (fpa, &top_a);
-	fgetpos (fpb, &top_b);
+	// Get position of matrix beginning (no longer used)
+	// fpos_t top_a, top_b;
+	// fgetpos (fpa, &top_a);
+	// fgetpos (fpb, &top_b);
 
 	// Create separate communicator with only number of needed processes
 	MPI_Comm cart_comm, sub_comm;
 	MPI_Comm_split(MPI_COMM_WORLD, id < n*n, id, &sub_comm);
+	p = n*n;
 
 	// Create cartesian communicator for active processes, finalize other processes
 	if (id < n*n) {
@@ -75,13 +76,18 @@ int main(int argc, char *argv[]) {
 	// Get init. numbers
 	// Matrix alignment integrated
 	double a, b, c;
-	int offset = x*n+(y+x)%n;
+	int offset = x*n+((y+x)%n);
 	fseek(fpa, sizeof(double)*offset, SEEK_CUR);
 	fread(&a, sizeof(double), 1, fpa);
 	offset = ((x+y)%n)*n+y;
 	fseek(fpb, sizeof(double)*offset, SEEK_CUR);
 	fread(&b, sizeof(double), 1, fpb);
 	c = 0;
+
+	fclose(fpa);
+	fclose(fpb);
+
+	printf("%d: a=%f b=%f\n", id, a, b);
 
 	// Determine adjacent processes
 	int lft, rgt, top, btm;
@@ -95,7 +101,7 @@ int main(int argc, char *argv[]) {
 	MPI_Status status;
 
 	int i;
-	for (i = 0; i < n - 1; i++) {
+	for (i = 0; i < n; i++) {
 		c += a*b;
 		if (!coords[0]) {
 			MPI_Send(&a, 1, MPI_DOUBLE, lft, 0, cart_comm);
@@ -115,7 +121,41 @@ int main(int argc, char *argv[]) {
 		b = b2;
 	}
 
-	printf("Result for cell (%d,%d) = %f", x, y, c);
+	MPI_Barrier(cart_comm);
+	printf("Result for cell (%d,%d) at position %d= %f\n", x, y, x*n+y, c);
+
+	MPI_Barrier(cart_comm);
+
+
+	int ord[p];
+	double bucket[p];
+	offset = x*n+y;
+	MPI_Gather(&offset,1,MPI_INTEGER,ord,1,MPI_INTEGER,0,cart_comm);
+	MPI_Gather(&c,1,MPI_DOUBLE,bucket,1,MPI_DOUBLE,0,cart_comm);
+
+	if (!id) {
+		FILE * fpc = fopen(argv[3],"w");
+		fwrite(&n, sizeof(int), 1, fpc);
+		fwrite(&n, sizeof(int), 1, fpc);
+		int i;
+		double result[p];
+		for (i = 0; i < p; i++) {
+			result[ord[i]] = bucket[i];
+		}
+		fwrite(result,sizeof(double),p,fpc);
+		fclose(fpc);
+	}
+
+
+MPI_Finalize();
+return 0;
+
+}
+
+
+// Everything below this line is my original code attempting to
+// have each process operate on a variable number of elements
+// before I took the 1-element-per-process approach
 
 	/*
 	int i, j, offset;
@@ -193,7 +233,6 @@ int main(int argc, char *argv[]) {
 
 
 	}
-	*/
 	// write_checkerboard_matrix(argv[3], (void**)&mat_c, MPI_DOUBLE, n, n, cart_comm);
 
 
@@ -286,3 +325,4 @@ int fast_square_root(int num) {
 	conv.f *= (threehalfs - (x2 * conv.f * conv.f));
 	return (int)(1/conv.f);
 }
+*/
