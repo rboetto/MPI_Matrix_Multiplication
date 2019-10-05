@@ -1,4 +1,4 @@
-# MPI N by N Matrix Multiplication
+# N by N Matrix Multiplication (MPI, Cannon's algorithm)
 Matrix multiply
 
 Uses message-passing interface to multiply two N by N matrices.
