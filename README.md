@@ -1,7 +1,7 @@
-# MPI_Ass_5
+# MPI N by N Matrix Multiplication
 Matrix multiply
 
-Uses message-passing interface to multiply two N by N matrices
+Uses message-passing interface to multiply two N by N matrices.
 
 $ make
 to compile multiplication program
